@@ -27,10 +27,16 @@ const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 function getBaseUrl(req) {
-  if (process.env.APP_URL) return process.env.APP_URL.trim().replace(/\/$/, '');
   const forwardedProto = req.get('x-forwarded-proto');
   const protocol = forwardedProto ? forwardedProto.split(',')[0].trim() : req.protocol;
-  return `${protocol}://${req.get('host')}`.replace(/\/$/, '');
+  const requestBaseUrl = `${protocol}://${req.get('host')}`.replace(/\/$/, '');
+
+  if (isProduction) return requestBaseUrl;
+  return process.env.APP_URL?.trim().replace(/\/$/, '') || requestBaseUrl;
+}
+
+function getGoogleCallbackUrl(req) {
+  return `${getBaseUrl(req)}/auth/google/callback`;
 }
 
 // Middleware
@@ -80,7 +86,7 @@ if (googleOAuthConfigured) {
   passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID.trim(),
     clientSecret: process.env.GOOGLE_CLIENT_SECRET.trim(),
-    callbackURL: process.env.GOOGLE_CALLBACK_URL?.trim() || `${process.env.APP_URL?.trim().replace(/\/$/, '') || `http://localhost:${PORT}`}/auth/google/callback`,
+    callbackURL: process.env.GOOGLE_CALLBACK_URL?.trim() || `http://localhost:${PORT}/auth/google/callback`,
     passReqToCallback: true
   }, (req, accessToken, refreshToken, profile, done) => {
     const email = profile.emails?.[0]?.value?.trim().toLowerCase();
@@ -249,7 +255,12 @@ app.get('/auth/google', (req, res, next) => {
   if (!googleOAuthConfigured) {
     return res.redirect('/login?error=google_not_configured');
   }
-  passport.authenticate('google', { scope: ['profile', 'email'], state: true })(req, res, next);
+  const callbackURL = getGoogleCallbackUrl(req);
+  passport.authenticate('google', {
+    scope: ['profile', 'email'],
+    state: true,
+    callbackURL
+  })(req, res, next);
 });
 
 app.get('/auth/google/callback',
