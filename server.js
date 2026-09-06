@@ -263,14 +263,34 @@ app.get('/auth/google', (req, res, next) => {
   })(req, res, next);
 });
 
-app.get('/auth/google/callback',
-  passport.authenticate('google', { 
-    failureRedirect: '/login?error=google_auth_failed' 
-  }),
-  (req, res) => {
-    res.redirect('/dashboard');
+app.get('/auth/google/callback', (req, res, next) => {
+  if (!googleOAuthConfigured) {
+    return res.redirect('/login?error=google_not_configured');
   }
-);
+
+  const callbackURL = getGoogleCallbackUrl(req);
+  passport.authenticate('google', {
+    callbackURL,
+    failureRedirect: '/login?error=google_auth_failed'
+  }, (err, user) => {
+    if (err) {
+      console.error('[v0] Google OAuth callback failed:', err.message);
+      return res.redirect('/login?error=google_auth_failed');
+    }
+
+    if (!user) {
+      return res.redirect('/login?error=google_auth_failed');
+    }
+
+    req.logIn(user, (loginError) => {
+      if (loginError) {
+        console.error('[v0] Google session creation failed:', loginError.message);
+        return res.redirect('/login?error=google_session_failed');
+      }
+      return res.redirect('/dashboard');
+    });
+  })(req, res, next);
+});
 
 // Dashboard (protected route)
 app.get('/dashboard', (req, res) => {
