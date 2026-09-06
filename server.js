@@ -27,10 +27,10 @@ const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === 'production';
 
 function getBaseUrl(req) {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
+  if (process.env.APP_URL) return process.env.APP_URL.trim().replace(/\/$/, '');
   const forwardedProto = req.get('x-forwarded-proto');
   const protocol = forwardedProto ? forwardedProto.split(',')[0].trim() : req.protocol;
-  return `${protocol}://${req.get('host')}`;
+  return `${protocol}://${req.get('host')}`.replace(/\/$/, '');
 }
 
 // Middleware
@@ -71,26 +71,31 @@ passport.deserializeUser((user, done) => {
 
 // Google OAuth Strategy
 const googleOAuthConfigured = Boolean(
-  process.env.GOOGLE_CLIENT_ID &&
-  process.env.GOOGLE_CLIENT_SECRET &&
-  process.env.GOOGLE_CLIENT_ID !== 'YOUR_GOOGLE_CLIENT_ID'
+  process.env.GOOGLE_CLIENT_ID?.trim() &&
+  process.env.GOOGLE_CLIENT_SECRET?.trim() &&
+  !process.env.GOOGLE_CLIENT_ID.includes('YOUR_GOOGLE_CLIENT_ID')
 );
 
 if (googleOAuthConfigured) {
   passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: process.env.GOOGLE_CALLBACK_URL || `${process.env.APP_URL || `http://localhost:${PORT}`}/auth/google/callback`
-  }, (accessToken, refreshToken, profile, done) => {
-    // Here you would typically find or create a user in your database
-    const user = {
+    clientID: process.env.GOOGLE_CLIENT_ID.trim(),
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET.trim(),
+    callbackURL: process.env.GOOGLE_CALLBACK_URL?.trim() || `${process.env.APP_URL?.trim().replace(/\/$/, '') || `http://localhost:${PORT}`}/auth/google/callback`,
+    passReqToCallback: true
+  }, (req, accessToken, refreshToken, profile, done) => {
+    const email = profile.emails?.[0]?.value?.trim().toLowerCase();
+
+    if (!profile.id || !email) {
+      return done(new Error('Google tidak mengembalikan email pengguna. Pastikan scope email aktif.'));
+    }
+
+    return done(null, {
       id: profile.id,
-      displayName: profile.displayName,
-      email: profile.emails[0].value,
-      photo: profile.photos[0].value,
+      displayName: profile.displayName || email.split('@')[0],
+      email,
+      photo: profile.photos?.[0]?.value || null,
       provider: 'google'
-    };
-    return done(null, user);
+    });
   }));
   console.log('✅ Google OAuth configured successfully');
 } else {
